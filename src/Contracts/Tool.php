@@ -5,6 +5,7 @@ namespace Laravel\Ai\Contracts;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Tools\Request;
+use Prism\Prism\ValueObjects\ToolOutput;
 use Stringable;
 
 interface Tool
@@ -17,7 +18,7 @@ interface Tool
     /**
      * Execute the tool.
      */
-    public function handle(Request $request): Stringable|string;
+    public function handle(Request $request): Stringable|string|ToolOutput;
 
     /**
      * Get the tool's schema definition.

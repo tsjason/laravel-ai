@@ -11,6 +11,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Gateway\Prism\PrismTool;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
+use Laravel\Ai\Providers\AnthropicProvider;
 use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Providers\Tools\FileSearch;
 use Laravel\Ai\Providers\Tools\ProviderTool;
@@ -19,7 +20,9 @@ use Laravel\Ai\Providers\Tools\WebSearch;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Facades\Prism;
+use Prism\Prism\Providers\Anthropic\Enums\AnthropicCacheType;
 use Prism\Prism\ValueObjects\ProviderTool as PrismProviderTool;
+use Prism\Prism\ValueObjects\ToolOutput;
 use RuntimeException;
 
 trait AddsToolsToPrismRequests
@@ -27,14 +30,21 @@ trait AddsToolsToPrismRequests
     /**
      * Add the given tools to the Prism request.
      */
-    protected function addTools($request, array $tools, ?TextGenerationOptions $options = null)
+    protected function addTools($request, array $tools, ?TextGenerationOptions $options = null, ?Provider $provider = null)
     {
+        $prismTools = collect($tools)->map(function ($tool) {
+            return ! $tool instanceof ProviderTool ? $this->createPrismTool($tool) : null;
+        })->filter()->values()->all();
+
+        // For Anthropic, set cache control on the last tool to create a cache breakpoint
+        // that covers the system prompt + all tool definitions.
+        if ($provider instanceof AnthropicProvider && count($prismTools) > 0) {
+            $lastTool = $prismTools[count($prismTools) - 1];
+            $lastTool->withProviderOptions(['cacheType' => AnthropicCacheType::Ephemeral]);
+        }
+
         return $request
-            ->withTools(
-                (new Collection($tools))->map(function ($tool) {
-                    return ! $tool instanceof ProviderTool ? $this->createPrismTool($tool) : null;
-                })->filter()->values()->all()
-            )
+            ->withTools($prismTools)
             ->withToolChoice(ToolChoice::Auto)
             ->withMaxSteps(
                 $options?->maxSteps ?? round(count($tools) * 1.5)
@@ -66,15 +76,15 @@ trait AddsToolsToPrismRequests
     /**
      * Invoke the given tool with the given arguments.
      */
-    protected function invokeTool(Tool $tool, array $arguments): string
+    protected function invokeTool(Tool $tool, array $arguments): string|ToolOutput
     {
         $arguments = $arguments['schema_definition'] ?? $arguments;
 
         call_user_func($this->invokingToolCallback, $tool, $arguments);
 
-        return (string) tap(
+        return tap(
             $tool->handle(new ToolRequest($arguments)),
-            fn ($result) => call_user_func($this->toolInvokedCallback, $tool, $arguments, $result)
+            fn ($result) => call_user_func($this->toolInvokedCallback, $tool, $arguments, $result instanceof ToolOutput ? $result->result : $result)
         );
     }
 

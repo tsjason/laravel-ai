@@ -21,6 +21,7 @@ use Laravel\Ai\Files\LocalImage;
 use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\Messages\Message;
+use Laravel\Ai\Providers\AnthropicProvider;
 use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Responses\AudioResponse;
 use Laravel\Ai\Responses\Data\GeneratedImage;
@@ -34,8 +35,10 @@ use Laravel\Ai\Responses\TranscriptionResponse;
 use Prism\Prism\Enums\Provider as PrismProvider;
 use Prism\Prism\Exceptions\PrismException as PrismVendorException;
 use Prism\Prism\Facades\Prism;
+use Prism\Prism\Providers\Anthropic\Enums\AnthropicCacheType;
 use Prism\Prism\ValueObjects\Media\Audio;
 use Prism\Prism\ValueObjects\Media\Image as PrismImage;
+use Prism\Prism\ValueObjects\Messages\SystemMessage;
 
 class PrismGateway implements Gateway
 {
@@ -71,11 +74,11 @@ class PrismGateway implements Gateway
         ];
 
         if (! empty($instructions)) {
-            $request->withSystemPrompt($instructions);
+            $request->withSystemPrompt($this->buildSystemMessage($provider, $instructions));
         }
 
         if (count($tools) > 0) {
-            $this->addTools($request, $tools, $options);
+            $this->addTools($request, $tools, $options, $provider);
             $this->addProviderTools($provider, $request, $tools);
         }
 
@@ -132,11 +135,11 @@ class PrismGateway implements Gateway
         ];
 
         if (! empty($instructions)) {
-            $request->withSystemPrompt($instructions);
+            $request->withSystemPrompt($this->buildSystemMessage($provider, $instructions));
         }
 
         if (count($tools) > 0) {
-            $this->addTools($request, $tools, $options);
+            $this->addTools($request, $tools, $options, $provider);
             $this->addProviderTools($provider, $request, $tools);
         }
 
@@ -155,6 +158,19 @@ class PrismGateway implements Gateway
         } catch (PrismVendorException $e) {
             throw PrismException::toAiException($e, $provider, $model);
         }
+    }
+
+    /**
+     * Build a system message, adding prompt caching for Anthropic providers.
+     */
+    protected function buildSystemMessage(Provider $provider, string $instructions): string|SystemMessage
+    {
+        if ($provider instanceof AnthropicProvider) {
+            return (new SystemMessage($instructions))
+                ->withProviderOptions(['cacheType' => AnthropicCacheType::Ephemeral]);
+        }
+
+        return $instructions;
     }
 
     /**

@@ -8,6 +8,7 @@ use Laravel\Ai\Responses\Data\ToolResult;
 use Prism\Prism\Exceptions\PrismException;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\ToolCall as PrismToolCall;
+use Prism\Prism\ValueObjects\ToolOutput;
 use Prism\Prism\ValueObjects\ToolResult as PrismToolResult;
 use Throwable;
 use TypeError;
@@ -19,13 +20,17 @@ class PrismTool extends Tool
     /**
      * {@inheritdoc}
      */
-    public function handle(...$args): string
+    public function handle(...$args): string|ToolOutput
     {
         try {
             $value = call_user_func($this->fn, $args);
 
+            if ($value instanceof ToolOutput) {
+                return $value;
+            }
+
             if (! is_string($value)) {
-                throw PrismException::invalidReturnTypeInTool($this->name, new TypeError('Return value must be of type string'));
+                throw PrismException::invalidReturnTypeInTool($this->name, new TypeError('Return value must be of type string or ToolOutput'));
             }
 
             return $value;
